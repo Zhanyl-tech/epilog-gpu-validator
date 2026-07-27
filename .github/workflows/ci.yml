@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.24', '1.26']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '${{ matrix.go }}' }
+      - run: go vet ./...
+      - run: go test -race -cover ./...
+
+  scenarios:
+    # The scenario table is in the README; if it stops matching, the README lies.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26' }
+      - run: make scenarios
+      - name: A healthy GPU must never exit non-zero
+        run: |
+          go build -o /tmp/egv ./cmd/epilog-gpu-validator
+          SLURM_JOB_ID=1 /tmp/egv --simulate healthy --enforce; test $? -eq 0
+      - name: A failed query must never drain
+        run: |
+          SLURM_JOB_ID=1 /tmp/egv --simulate missing --enforce; test $? -eq 0
