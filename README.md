@@ -160,6 +160,20 @@ branch is reachable without a broken card to hand — and the CI asserts the two
 safety properties directly: a healthy GPU never exits non-zero, and a failed
 query never drains.
 
+## The set
+
+Part of a set of tools covering the lifecycle of a GPU allocation, each built on
+the same rule — never act on absent evidence:
+
+- **epilog-gpu-validator** — this repo. Hardware faults *between* jobs.
+- **[gpu-reaper](https://github.com/Zhanyl-tech/gpu-reaper)** — the companion
+  that catches wasted GPUs *during* a job; its "no active load test" limitation
+  is the gap this tool's between-jobs timing is meant to complement.
+- **[ib-slurm-exporter](https://github.com/Zhanyl-tech/ib-slurm-exporter)** —
+  fabric problems attributed to the job causing them.
+- **[slurm-scheduler-lab](https://github.com/Zhanyl-tech/slurm-scheduler-lab)** —
+  the scheduling policy that decides what runs in the first place.
+
 ## License
 
 MIT
