@@ -36,6 +36,10 @@ using the hardware.
 
 ## Why this is a dangerous tool to write
 
+![Decision tree: a failed GPU query exits zero and keeps the node in service, while persistent hardware faults exit non-zero and drain](docs/severity.svg)
+
+<sub>The left branch is the one that matters. An unreadable query is a monitoring failure, and draining on it would take out the fleet.</sub>
+
 **Slurm drains the node when Epilog exits non-zero.**
 
 So a false positive doesn't produce a bad metric, it removes a working node. And

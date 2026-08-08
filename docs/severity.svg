@@ -1,0 +1,98 @@
+<svg width="1200" height="790" viewBox="0 0 1200 790" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ttl dsc">
+<title id="ttl">epilog-gpu-validator: severity classification and the ignorance path</title>
+<desc id="dsc">After a job completes, epilog queries the GPU. If the query itself fails that is a monitoring failure and the node stays in service. Only persistent hardware faults exit non-zero and drain the node.</desc>
+
+<rect width="1200" height="790" fill="#1a1520"/>
+
+<rect width="1200" height="86" fill="#241c26"/>
+<rect width="6" height="86" fill="#f5b544"/>
+<text x="44" y="38" font-family="ui-sans-serif,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="25" font-weight="700" fill="#e9eff5">Slurm drains the node when Epilog exits non-zero</text>
+<text x="44" y="66" font-family="ui-sans-serif,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="14.5" fill="#828c98">So a false positive does not produce a bad metric. It removes a working node &#8212; and a fleet-wide cause removes every node.</text>
+
+<rect x="60" y="122" width="200" height="66" rx="10" fill="#251d28" stroke="#3a3040" stroke-width="1.5"/>
+<text x="160" y="152" font-family="ui-sans-serif,Arial,sans-serif" font-size="14" fill="#e9eff5" text-anchor="middle">job completes</text>
+<text x="160" y="172" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#828c98" text-anchor="middle">node now idle</text>
+
+<line x1="260" y1="155" x2="316" y2="155" stroke="#2e2433" stroke-width="2" stroke-dasharray="5 4"/>
+<polygon points="314,149 326,155 314,161" fill="#58a6ff"/>
+<circle r="4.5" cx="260" cy="155" fill="#58a6ff" opacity="0">
+<animate attributeName="cx" values="260;316" dur="1.5s" repeatCount="indefinite"/>
+<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.5s" repeatCount="indefinite"/>
+</circle>
+
+<rect x="330" y="122" width="270" height="66" rx="10" fill="#251d28" stroke="#3a3040" stroke-width="1.5"/>
+<text x="465" y="150" font-family="ui-monospace,Menlo,monospace" font-size="14" fill="#e9eff5" text-anchor="middle">Epilog</text>
+<text x="465" y="172" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#828c98" text-anchor="middle">runs as root, nothing else using the GPU</text>
+
+<line x1="600" y1="155" x2="656" y2="155" stroke="#2e2433" stroke-width="2" stroke-dasharray="5 4"/>
+<polygon points="654,149 666,155 654,161" fill="#58a6ff"/>
+<circle r="4.5" cx="600" cy="155" fill="#58a6ff" opacity="0">
+<animate attributeName="cx" values="600;656" dur="1.5s" repeatCount="indefinite" begin="0.4s"/>
+<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.5s" repeatCount="indefinite" begin="0.4s"/>
+</circle>
+
+<rect x="670" y="122" width="230" height="66" rx="10" fill="#251d28" stroke="#58a6ff" stroke-width="2"/>
+<text x="785" y="150" font-family="ui-monospace,Menlo,monospace" font-size="14" fill="#e9eff5" text-anchor="middle">nvidia-smi query</text>
+<text x="785" y="172" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#828c98" text-anchor="middle">per-GPU health fields</text>
+
+<path d="M785,188 V214 H245 V246" fill="none" stroke="#3a3040" stroke-width="2"/>
+<path d="M785,188 V214 H805 V246" fill="none" stroke="#3a3040" stroke-width="2"/>
+<text x="420" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f85149">query itself failed</text>
+<text x="828" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#3fb950">parsed cleanly</text>
+
+<rect x="60" y="248" width="370" height="98" rx="11" fill="#2e2433" stroke="#f85149" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="82" y="276" font-family="ui-sans-serif,Arial,sans-serif" font-size="11" letter-spacing="1.2" font-weight="700" fill="#f85149">MISSING / TIMEOUT / UNPARSEABLE</text>
+<text x="82" y="302" font-family="ui-sans-serif,Arial,sans-serif" font-size="14" fill="#e9eff5">This is a monitoring failure,</text>
+<text x="82" y="324" font-family="ui-sans-serif,Arial,sans-serif" font-size="14" fill="#e9eff5">not a hardware fault.</text>
+
+<path d="M245,346 V374" fill="none" stroke="#3a3040" stroke-width="2"/>
+<polygon points="239,372 245,384 251,372" fill="#3fb950"/>
+
+<rect x="60" y="388" width="370" height="92" rx="11" fill="#251d28" stroke="#3fb950" stroke-width="2.5">
+<animate attributeName="opacity" values="1;0.55;1" dur="2.4s" repeatCount="indefinite"/>
+</rect>
+<text x="82" y="418" font-family="ui-monospace,Menlo,monospace" font-size="17" font-weight="700" fill="#3fb950">exit 0</text>
+<text x="82" y="444" font-family="ui-sans-serif,Arial,sans-serif" font-size="14.5" fill="#e9eff5">node stays in service</text>
+<text x="82" y="467" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" font-style="italic" fill="#3fb950">never drain on ignorance</text>
+
+<rect x="470" y="248" width="670" height="46" rx="9" fill="#241c26" stroke="#3a3040" stroke-width="1.5"/>
+<text x="492" y="277" font-family="ui-sans-serif,Arial,sans-serif" font-size="13.5" font-weight="700" fill="#adb8c4">classify severity</text>
+<text x="900" y="277" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" letter-spacing="1" font-weight="700" fill="#828c98" text-anchor="middle">EXIT</text>
+<text x="1050" y="277" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" letter-spacing="1" font-weight="700" fill="#828c98" text-anchor="middle">NODE</text>
+
+<rect x="470" y="302" width="670" height="46" rx="9" fill="#251d28" stroke="#3fb950" stroke-width="1.5"/>
+<text x="492" y="331" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#3fb950">ok</text>
+<text x="620" y="331" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">healthy</text>
+<text x="900" y="331" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#e9eff5" text-anchor="middle">0</text>
+<text x="1050" y="331" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#3fb950" text-anchor="middle">stays up</text>
+
+<rect x="470" y="356" width="670" height="46" rx="9" fill="#251d28" stroke="#3fb950" stroke-width="1.5"/>
+<text x="492" y="385" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#3fb950">transient</text>
+<text x="620" y="385" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">remap-pending, thermal</text>
+<text x="900" y="385" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#e9eff5" text-anchor="middle">0</text>
+<text x="1050" y="385" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#3fb950" text-anchor="middle">stays up</text>
+
+<rect x="470" y="410" width="670" height="46" rx="9" fill="#251d28" stroke="#f5b544" stroke-width="1.5"/>
+<text x="492" y="439" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#f5b544">degraded</text>
+<text x="620" y="439" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">pcie-gen, hw-slowdown</text>
+<text x="900" y="439" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#f5b544" text-anchor="middle">1</text>
+<text x="1050" y="439" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f5b544" text-anchor="middle">DRAIN</text>
+
+<rect x="470" y="464" width="670" height="46" rx="9" fill="#251d28" stroke="#f85149" stroke-width="2"/>
+<text x="492" y="493" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#f85149">fatal</text>
+<text x="620" y="493" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">ecc-uncorrectable, row-remap-failure</text>
+<text x="900" y="493" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#f85149" text-anchor="middle">1</text>
+<text x="1050" y="493" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f85149" text-anchor="middle">DRAIN</text>
+
+<text x="470" y="536" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#828c98">Persistent faults drain. Conditions that clear on their own do not.</text>
+
+<rect x="60" y="576" width="1080" height="158" rx="11" fill="#251d28" stroke="#3a3040" stroke-width="1.5"/>
+<rect x="60" y="576" width="5" height="158" fill="#f85149"/>
+<text x="88" y="606" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" letter-spacing="1.4" font-weight="700" fill="#f85149">WHY THE IGNORANCE PATH IS THE MOST IMPORTANT LINE IN THE SUITE</text>
+<text x="88" y="636" font-family="ui-sans-serif,Arial,sans-serif" font-size="15.5" fill="#e9eff5">A driver bug, a monitoring gap or a heatwave is not a per-node fault &#8212; it hits every node at once.</text>
+<text x="88" y="662" font-family="ui-sans-serif,Arial,sans-serif" font-size="15.5" fill="#e9eff5">Draining on an unreadable query turns one broken health check into a cluster-wide outage,</text>
+<text x="88" y="688" font-family="ui-sans-serif,Arial,sans-serif" font-size="15.5" fill="#e9eff5">one job completion at a time, faster than anyone can react.</text>
+<text x="88" y="716" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" font-style="italic" fill="#828c98">Absence of evidence is not evidence of a fault. The tool exits 0 and says so.</text>
+
+<text x="60" y="766" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#5c5560">Every row above is a scenario in the test suite: make scenarios</text>
+</svg>
