@@ -1,261 +1,233 @@
 // Package gpu reads the health signals an Epilog check needs.
 //
-// Deliberately narrow. Epilog runs on every job completion and Slurm kills it
-// at EpilogMsgTime/EpilogTimeout, so this collects the cheap, high-signal
-// fields in one nvidia-smi invocation rather than shelling out repeatedly.
+// Deliberately narrow. Epilog runs on every job completion, and slurm.conf
+// says "If the Epilog or slurm_spank_job_epilog time out, the node is
+// drained" (EpilogTimeout, https://slurm.schedmd.com/slurm.conf.html). So
+// this collects the cheap, high-signal fields in one nvidia-smi invocation
+// rather than shelling out repeatedly.
+//
+// Nothing in this package decides severity. It reports what nvidia-smi said,
+// including what it could NOT say (Health.Unreadable, QueryError), and leaves
+// the judgement to package checks.
 package gpu
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
-	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
+
+// Query fields, in the order they are requested and parsed. The names are
+// nvidia-smi --query-gpu field names; see `nvidia-smi --help-query-gpu`.
+const (
+	FieldIndex              = "index"
+	FieldUUID               = "uuid"
+	FieldName               = "name"
+	FieldBusID              = "pci.bus_id"
+	FieldPCIeWidthCurrent   = "pcie.link.width.current"
+	FieldPCIeWidthMax       = "pcie.link.width.max"
+	FieldPCIeGenCurrent     = "pcie.link.gen.current"
+	FieldPCIeGenMax         = "pcie.link.gen.max"
+	FieldECCUncorrVolatile  = "ecc.errors.uncorrected.volatile.total"
+	FieldECCUncorrAggregate = "ecc.errors.uncorrected.aggregate.total"
+	FieldECCCorrVolatile    = "ecc.errors.corrected.volatile.total"
+	FieldRemapPending       = "remapped_rows.pending"
+	FieldRemapUncorrectable = "remapped_rows.uncorrectable"
+	FieldRemapFailure       = "remapped_rows.failure"
+	FieldClockReasons       = "clocks_throttle_reasons.active"
+	FieldTemperature        = "temperature.gpu"
+	FieldMemUsed            = "memory.used"
+	FieldMemTotal           = "memory.total"
+	FieldPersistence        = "persistence_mode"
+)
+
+// QueryFields is the exact --query-gpu list, in column order.
+//
+// Not verified against a real driver in this repo: that every one of these is
+// accepted by --query-gpu on every driver branch (the remapped_rows.* fields
+// in particular are documented under --query-remapped-rows). If nvidia-smi
+// rejects a field it exits 2, which is classified as a monitoring failure
+// (nothing checked, exit 0), and `--check-config` reports it at install time.
+var QueryFields = []string{
+	FieldIndex, FieldUUID, FieldName, FieldBusID,
+	FieldPCIeWidthCurrent, FieldPCIeWidthMax, FieldPCIeGenCurrent, FieldPCIeGenMax,
+	FieldECCUncorrVolatile, FieldECCUncorrAggregate, FieldECCCorrVolatile,
+	FieldRemapPending, FieldRemapUncorrectable, FieldRemapFailure,
+	FieldClockReasons, FieldTemperature,
+	FieldMemUsed, FieldMemTotal, FieldPersistence,
+}
 
 // Health is one GPU's state at Epilog time.
 type Health struct {
+	// Index is the NVML index nvidia-smi printed. It is NOT necessarily the
+	// number Slurm hands the Epilog, which is Slurm's own GRES index; which
+	// GPU that names depends on gres.conf (see --gpu-numbering). Nor is it
+	// necessarily the /dev/nvidiaN minor: the Slurm gres guide says that
+	// mapping "is nondeterministic and system dependent"
+	// (https://slurm.schedmd.com/gres.html). -1 when unknown.
 	Index int
 	UUID  string
 	Name  string
+	// PCIBusID is in canonical form (see NormalizeBusID).
+	PCIBusID string
+	// SlurmID is the Epilog-environment entry that selected this GPU ("1",
+	// "GPU-..."). Empty with --all-gpus.
+	SlurmID string
 
-	// PCIe link, current versus the maximum this device supports. A card
-	// running x8 on an x16 slot is the classic silent degradation: everything
-	// works, everything is half speed, and no job ever reports an error.
+	// PCIe link, current versus the maximum this device supports. NVIDIA's
+	// manual says the current values "may be reduced when the GPU is not in
+	// use", and at Epilog time the GPU is by construction not in use, so an
+	// idle reading below max is not evidence of a downtrained link.
 	PCIeWidthCurrent int
 	PCIeWidthMax     int
 	PCIeGenCurrent   int
 	PCIeGenMax       int
 
-	// ECC. Uncorrectable (volatile) means memory corruption already happened.
+	// ECC. nvidia-smi: "Volatile error counters track the number of errors
+	// detected since the last driver load", and "On Linux the driver unloads
+	// when no active clients exist" unless persistence mode is enabled.
 	ECCUncorrectableVolatile  int64
 	ECCUncorrectableAggregate int64
 	ECCCorrectableVolatile    int64
 
-	// Row remapping replaced retired pages on Ampere and later. A pending
-	// remap needs a reset; a failure means the device is out of spare rows.
-	RemappedRowsPending      int64
+	// Row remapping (Ampere and later). A pending remap needs a GPU reset; a
+	// failure means a remap could not be applied.
+	RemappedRowsPending       int64
 	RemappedRowsUncorrectable int64
-	RemappedRowsFailure      bool
+	RemappedRowsFailure       bool
 
-	// Throttling. Thermal and power are usually transient; HW slowdown and
-	// especially HW thermal slowdown are not.
-	ThrottleReasons []string
+	// ClockEventReasons is the clocks_throttle_reasons.active bitmask. Bit
+	// meanings are the nvml.h constants in clock.go.
+	ClockEventReasons uint64
 
-	TemperatureC int
-	MemUsedMiB   int64
-	MemTotalMiB  int64
-	PersistenceM bool
+	TemperatureC    int
+	MemUsedMiB      int64
+	MemTotalMiB     int64
+	PersistenceMode bool
 
-	// Present is false when the device could not be queried at all — it fell
-	// off the bus, or the driver is wedged.
-	Present bool
+	// Unreadable names the query fields whose value could not be read:
+	// "[N/A]", "[Not Supported]", or not a number. Their Go fields above are
+	// zero, and zero must NOT be read as healthy; checks skip them and emit an
+	// Unknown finding saying what was not checked.
+	Unreadable []string
 }
 
-// Source supplies per-GPU health.
+// Readable reports whether a field was read successfully.
+func (h Health) Readable(field string) bool {
+	for _, f := range h.Unreadable {
+		if f == field {
+			return false
+		}
+	}
+	return true
+}
+
+// Label is the short name used in findings and the drain reason: "gpu3" is
+// NVML index 3, the number `nvidia-smi -i 3` takes.
+func (h Health) Label() string {
+	if h.Index >= 0 {
+		return fmt.Sprintf("gpu%d", h.Index)
+	}
+	if h.SlurmID != "" {
+		return "slurm-gpu" + h.SlurmID
+	}
+	return "gpu?"
+}
+
+// Result is what one query returned.
+type Result struct {
+	GPUs []Health
+	// Malformed holds rows that could not be parsed at all (wrong column
+	// count, unreadable identity). They are reported, never guessed at.
+	Malformed []string
+}
+
+// Source supplies per-GPU health for every GPU on the node. Selecting the
+// job's GPUs happens afterwards (see Match): `nvidia-smi -i` is documented as
+// taking "a single specified GPU", so a comma-separated list is not relied on.
 type Source interface {
-	// Query returns health for the given GPU indices. An empty slice means all
-	// visible devices.
-	Query(ctx context.Context, indices []int) ([]Health, error)
+	Query(ctx context.Context) (Result, error)
 	Name() string
 }
 
-// ── nvidia-smi ─────────────────────────────────────────────────────────────
+// ── identity ───────────────────────────────────────────────────────────────
 
-type SMISource struct {
-	Binary string
+// Target is one GPU the finished job held.
+type Target struct {
+	// SlurmID is the entry as the Epilog environment gave it.
+	SlurmID string
+	// BusID (canonical) or UUID identifies the device to nvidia-smi. Exactly
+	// one is set.
+	BusID string
+	UUID  string
 }
 
-func NewSMISource() *SMISource { return &SMISource{Binary: "nvidia-smi"} }
-
-func (s *SMISource) Name() string { return "nvidia-smi" }
-
-// One query for everything. Each extra nvidia-smi invocation costs ~100-300ms
-// on a loaded node, and the Epilog budget is measured in seconds.
-const smiFields = "index,uuid,name," +
-	"pcie.link.width.current,pcie.link.width.max," +
-	"pcie.link.gen.current,pcie.link.gen.max," +
-	"ecc.errors.uncorrected.volatile.total,ecc.errors.uncorrected.aggregate.total," +
-	"ecc.errors.corrected.volatile.total," +
-	"remapped_rows.pending,remapped_rows.uncorrectable,remapped_rows.failure," +
-	"clocks_throttle_reasons.active,temperature.gpu," +
-	"memory.used,memory.total,persistence_mode"
-
-func (s *SMISource) Query(ctx context.Context, indices []int) ([]Health, error) {
-	args := []string{"--query-gpu=" + smiFields, "--format=csv,noheader,nounits"}
-	if len(indices) > 0 {
-		strs := make([]string, len(indices))
-		for i, n := range indices {
-			strs[i] = strconv.Itoa(n)
-		}
-		args = append(args, "-i", strings.Join(strs, ","))
+func (t Target) String() string {
+	if t.BusID != "" {
+		return fmt.Sprintf("slurm-gpu%s(%s)", t.SlurmID, t.BusID)
 	}
-
-	out, err := exec.CommandContext(ctx, s.Binary, args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("nvidia-smi: %w", err)
-	}
-
-	r := csv.NewReader(strings.NewReader(string(out)))
-	r.TrimLeadingSpace = true
-	r.FieldsPerRecord = -1
-	rows, err := r.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("parse nvidia-smi output: %w", err)
-	}
-
-	var out2 []Health
-	for _, row := range rows {
-		if len(row) < 18 {
-			continue
-		}
-		out2 = append(out2, Health{
-			Present:                   true,
-			Index:                     atoi(row[0]),
-			UUID:                      strings.TrimSpace(row[1]),
-			Name:                      strings.TrimSpace(row[2]),
-			PCIeWidthCurrent:          atoi(row[3]),
-			PCIeWidthMax:              atoi(row[4]),
-			PCIeGenCurrent:            atoi(row[5]),
-			PCIeGenMax:                atoi(row[6]),
-			ECCUncorrectableVolatile:  atoi64(row[7]),
-			ECCUncorrectableAggregate: atoi64(row[8]),
-			ECCCorrectableVolatile:    atoi64(row[9]),
-			RemappedRowsPending:       atoi64(row[10]),
-			RemappedRowsUncorrectable: atoi64(row[11]),
-			RemappedRowsFailure:       parseYesNo(row[12]),
-			ThrottleReasons:           parseThrottle(row[13]),
-			TemperatureC:              atoi(row[14]),
-			MemUsedMiB:                atoi64(row[15]),
-			MemTotalMiB:               atoi64(row[16]),
-			PersistenceM:              strings.EqualFold(strings.TrimSpace(row[17]), "Enabled"),
-		})
-	}
-	return out2, nil
+	return t.UUID
 }
 
-// ── Simulator ──────────────────────────────────────────────────────────────
+// The separator before the function number is normally "." ("0000:3b:00.0");
+// ":" is accepted too because NVIDIA's MIG guide writes the /proc path as
+// "domain:bus:device:function".
+var busIDRe = regexp.MustCompile(`^([0-9A-Fa-f]{1,8}):([0-9A-Fa-f]{1,2}):([0-9A-Fa-f]{1,2})[.:]([0-7])$`)
 
-// Scenario names a synthetic fault, so every classification branch is
-// reachable without a broken GPU to hand.
-type Scenario string
-
-const (
-	ScenarioHealthy       Scenario = "healthy"
-	ScenarioPCIeDegraded  Scenario = "pcie-degraded"  // x8 on an x16 slot
-	ScenarioECCUncorrect  Scenario = "ecc"            // uncorrectable ECC
-	ScenarioRemapFailure  Scenario = "remap-failure"  // out of spare rows
-	ScenarioRemapPending  Scenario = "remap-pending"  // needs a reset
-	ScenarioThermal       Scenario = "thermal"        // hot, throttling
-	ScenarioHWSlowdown    Scenario = "hw-slowdown"    // hardware slowdown
-	ScenarioFellOffBus    Scenario = "missing"        // device not queryable
-)
-
-type SimSource struct {
-	Scenario Scenario
-	GPUs     int
+// NormalizeBusID turns a PCI address into one canonical form so that
+// /proc/driver/nvidia/gpus directory names ("0000:3b:00.0") and nvidia-smi's
+// pci.bus_id ("00000000:3B:00.0") compare equal.
+func NormalizeBusID(s string) (string, bool) {
+	m := busIDRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return "", false
+	}
+	var n [4]uint64
+	for i := range n {
+		v, err := strconv.ParseUint(m[i+1], 16, 32)
+		if err != nil {
+			return "", false
+		}
+		n[i] = v
+	}
+	return fmt.Sprintf("%08X:%02X:%02X.%X", n[0], n[1], n[2], n[3]), true
 }
 
-func NewSimSource(s Scenario, gpus int) *SimSource {
-	if gpus <= 0 {
-		gpus = 4
-	}
-	return &SimSource{Scenario: s, GPUs: gpus}
-}
+var uuidRe = regexp.MustCompile(`^GPU-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
 
-func (s *SimSource) Name() string { return "simulator/" + string(s.Scenario) }
+// IsGPUUUID reports whether s has the shape of an NVIDIA GPU UUID. MIG
+// device UUIDs ("MIG-...") deliberately do not match: MIG is not supported.
+func IsGPUUUID(s string) bool { return uuidRe.MatchString(s) }
 
-func (s *SimSource) Query(_ context.Context, indices []int) ([]Health, error) {
-	if s.Scenario == ScenarioFellOffBus {
-		// The device is gone. nvidia-smi would fail outright.
-		return nil, fmt.Errorf("nvidia-smi: no devices were found")
-	}
-
-	want := indices
-	if len(want) == 0 {
-		want = make([]int, s.GPUs)
-		for i := range want {
-			want[i] = i
-		}
-	}
-
-	out := make([]Health, 0, len(want))
-	for _, i := range want {
-		h := Health{
-			Present: true, Index: i,
-			UUID: fmt.Sprintf("GPU-sim%08d", i), Name: "NVIDIA H100 80GB HBM3",
-			PCIeWidthCurrent: 16, PCIeWidthMax: 16,
-			PCIeGenCurrent: 5, PCIeGenMax: 5,
-			TemperatureC: 41, MemUsedMiB: 0, MemTotalMiB: 81559,
-			PersistenceM: true,
-		}
-
-		// Only the first GPU is faulted — a real degradation is rarely
-		// fleet-wide, and this exercises the "one bad card" path.
-		if i == want[0] {
-			switch s.Scenario {
-			case ScenarioPCIeDegraded:
-				h.PCIeWidthCurrent, h.PCIeGenCurrent = 8, 4
-			case ScenarioECCUncorrect:
-				h.ECCUncorrectableVolatile, h.ECCUncorrectableAggregate = 3, 17
-			case ScenarioRemapFailure:
-				h.RemappedRowsFailure, h.RemappedRowsUncorrectable = true, 9
-			case ScenarioRemapPending:
-				h.RemappedRowsPending = 4
-			case ScenarioThermal:
-				h.TemperatureC = 88
-				h.ThrottleReasons = []string{"sw_thermal_slowdown"}
-			case ScenarioHWSlowdown:
-				h.TemperatureC = 94
-				h.ThrottleReasons = []string{"hw_thermal_slowdown", "hw_slowdown"}
+// Match picks the job's GPUs out of a whole-node query. Every target comes
+// back either matched (with SlurmID filled in) or in missing; rows for GPUs
+// the job did not hold are dropped.
+func Match(targets []Target, gpus []Health) (matched []Health, missing []Target) {
+	for _, t := range targets {
+		found := false
+		for _, h := range gpus {
+			if (t.BusID != "" && t.BusID == h.PCIBusID) ||
+				(t.UUID != "" && strings.EqualFold(t.UUID, h.UUID)) {
+				h.SlurmID = t.SlurmID
+				matched = append(matched, h)
+				found = true
+				break
 			}
 		}
-		out = append(out, h)
-	}
-	return out, nil
-}
-
-// ── parsing ────────────────────────────────────────────────────────────────
-
-func atoi(s string) int {
-	n, _ := strconv.Atoi(clean(s))
-	return n
-}
-
-func atoi64(s string) int64 {
-	n, _ := strconv.ParseInt(clean(s), 10, 64)
-	return n
-}
-
-func clean(s string) string {
-	s = strings.TrimSpace(s)
-	// nvidia-smi reports unsupported fields as "[N/A]" or "[Not Supported]".
-	if strings.HasPrefix(s, "[") {
-		return ""
-	}
-	return s
-}
-
-func parseYesNo(s string) bool {
-	return strings.EqualFold(clean(s), "yes")
-}
-
-func parseThrottle(s string) []string {
-	s = clean(s)
-	if s == "" || strings.EqualFold(s, "Not Active") || s == "0x0000000000000000" {
-		return nil
-	}
-	var out []string
-	for _, part := range strings.Split(s, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
+		if !found {
+			missing = append(missing, t)
 		}
 	}
-	return out
+	return matched, missing
 }
 
-// QueryTimeout is the per-invocation cap. Slurm kills a slow Epilog and can
-// mark the node down for it, so hanging is worse than not checking.
-const QueryTimeout = 10 * time.Second
+// Resolver lists the node's device files by PCI bus ID. It is used to tell
+// whether device-file numbering and PCI bus order agree on this node, and to
+// resolve Slurm numbers under --gpu-numbering=minor.
+type Resolver interface {
+	// DeviceMinors returns minor number (the N in /dev/nvidiaN) → canonical
+	// PCI bus ID for every NVIDIA GPU the driver knows about.
+	DeviceMinors() (map[int]string, error)
+}

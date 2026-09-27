@@ -1,6 +1,6 @@
 <svg width="1200" height="790" viewBox="0 0 1200 790" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ttl dsc">
 <title id="ttl">epilog-gpu-validator: severity classification and the ignorance path</title>
-<desc id="dsc">After a job completes, epilog queries the GPU. If the query itself fails that is a monitoring failure and the node stays in service. Only persistent hardware faults exit non-zero and drain the node.</desc>
+<desc id="dsc">After a job completes, the Epilog queries the job's GPUs. If the query fails, or a field cannot be read, that is a monitoring failure and the node stays in service. Only evidence of a persistent hardware fault exits non-zero and drains the node, and only with --enforce; report-only runs always exit 0.</desc>
 
 <rect width="1200" height="790" fill="#1a1520"/>
 
@@ -22,7 +22,7 @@
 
 <rect x="330" y="122" width="270" height="66" rx="10" fill="#251d28" stroke="#3a3040" stroke-width="1.5"/>
 <text x="465" y="150" font-family="ui-monospace,Menlo,monospace" font-size="14" fill="#e9eff5" text-anchor="middle">Epilog</text>
-<text x="465" y="172" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#828c98" text-anchor="middle">runs as root, nothing else using the GPU</text>
+<text x="465" y="172" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#828c98" text-anchor="middle">runs as root with no PATH; GPUs now idle</text>
 
 <line x1="600" y1="155" x2="656" y2="155" stroke="#2e2433" stroke-width="2" stroke-dasharray="5 4"/>
 <polygon points="654,149 666,155 654,161" fill="#58a6ff"/>
@@ -37,11 +37,11 @@
 
 <path d="M785,188 V214 H245 V246" fill="none" stroke="#3a3040" stroke-width="2"/>
 <path d="M785,188 V214 H805 V246" fill="none" stroke="#3a3040" stroke-width="2"/>
-<text x="420" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f85149">query itself failed</text>
-<text x="828" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#3fb950">parsed cleanly</text>
+<text x="420" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f85149">query failed, no fault evidence</text>
+<text x="828" y="234" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#3fb950">parsed, or a documented fault code</text>
 
 <rect x="60" y="248" width="370" height="98" rx="11" fill="#2e2433" stroke="#f85149" stroke-width="1.5" stroke-dasharray="6 4"/>
-<text x="82" y="276" font-family="ui-sans-serif,Arial,sans-serif" font-size="11" letter-spacing="1.2" font-weight="700" fill="#f85149">MISSING / TIMEOUT / UNPARSEABLE</text>
+<text x="82" y="276" font-family="ui-sans-serif,Arial,sans-serif" font-size="11" letter-spacing="1.2" font-weight="700" fill="#f85149">NOT FOUND / TIMEOUT / UNREADABLE</text>
 <text x="82" y="302" font-family="ui-sans-serif,Arial,sans-serif" font-size="14" fill="#e9eff5">This is a monitoring failure,</text>
 <text x="82" y="324" font-family="ui-sans-serif,Arial,sans-serif" font-size="14" fill="#e9eff5">not a hardware fault.</text>
 
@@ -61,30 +61,30 @@
 <text x="1050" y="277" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" letter-spacing="1" font-weight="700" fill="#828c98" text-anchor="middle">NODE</text>
 
 <rect x="470" y="302" width="670" height="46" rx="9" fill="#251d28" stroke="#3fb950" stroke-width="1.5"/>
-<text x="492" y="331" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#3fb950">ok</text>
-<text x="620" y="331" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">healthy</text>
+<text x="492" y="331" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#3fb950">ok/unknown</text>
+<text x="620" y="331" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">healthy; idle PCIe link; [N/A] fields</text>
 <text x="900" y="331" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#e9eff5" text-anchor="middle">0</text>
 <text x="1050" y="331" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#3fb950" text-anchor="middle">stays up</text>
 
 <rect x="470" y="356" width="670" height="46" rx="9" fill="#251d28" stroke="#3fb950" stroke-width="1.5"/>
 <text x="492" y="385" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#3fb950">transient</text>
-<text x="620" y="385" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">remap-pending, thermal</text>
+<text x="620" y="385" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">thermal, remap pending, remapped rows</text>
 <text x="900" y="385" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#e9eff5" text-anchor="middle">0</text>
 <text x="1050" y="385" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#3fb950" text-anchor="middle">stays up</text>
 
 <rect x="470" y="410" width="670" height="46" rx="9" fill="#251d28" stroke="#f5b544" stroke-width="1.5"/>
 <text x="492" y="439" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#f5b544">degraded</text>
-<text x="620" y="439" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">pcie-gen, hw-slowdown</text>
+<text x="620" y="439" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">hw thermal slowdown, leaked memory</text>
 <text x="900" y="439" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#f5b544" text-anchor="middle">1</text>
 <text x="1050" y="439" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f5b544" text-anchor="middle">DRAIN</text>
 
 <rect x="470" y="464" width="670" height="46" rx="9" fill="#251d28" stroke="#f85149" stroke-width="2"/>
 <text x="492" y="493" font-family="ui-monospace,Menlo,monospace" font-size="13.5" font-weight="600" fill="#f85149">fatal</text>
-<text x="620" y="493" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">ecc-uncorrectable, row-remap-failure</text>
+<text x="620" y="493" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" fill="#adb8c4">ecc, remap failure, nvidia-smi exit 15</text>
 <text x="900" y="493" font-family="ui-monospace,Menlo,monospace" font-size="13.5" fill="#f85149" text-anchor="middle">1</text>
 <text x="1050" y="493" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" font-weight="700" fill="#f85149" text-anchor="middle">DRAIN</text>
 
-<text x="470" y="536" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#828c98">Persistent faults drain. Conditions that clear on their own do not.</text>
+<text x="470" y="536" font-family="ui-sans-serif,Arial,sans-serif" font-size="12.5" fill="#828c98">Evidence of a persistent fault drains. Conditions that clear, or cannot be read, do not.</text>
 
 <rect x="60" y="576" width="1080" height="158" rx="11" fill="#251d28" stroke="#3a3040" stroke-width="1.5"/>
 <rect x="60" y="576" width="5" height="158" fill="#f85149"/>
@@ -94,5 +94,5 @@
 <text x="88" y="688" font-family="ui-sans-serif,Arial,sans-serif" font-size="15.5" fill="#e9eff5">one job completion at a time, faster than anyone can react.</text>
 <text x="88" y="716" font-family="ui-sans-serif,Arial,sans-serif" font-size="13" font-style="italic" fill="#828c98">Absence of evidence is not evidence of a fault. The tool exits 0 and says so.</text>
 
-<text x="60" y="766" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#5c5560">Every row above is a scenario in the test suite: make scenarios</text>
+<text x="60" y="766" font-family="ui-sans-serif,Arial,sans-serif" font-size="11.5" fill="#5c5560">EXIT is with --enforce; report-only always exits 0. Each row is a case in the scenario table: make scenarios</text>
 </svg>

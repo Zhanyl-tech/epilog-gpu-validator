@@ -1,0 +1,44 @@
+name: release
+
+# On a version tag, build static Linux binaries and attach them, with
+# SHA-256 checksums, to the GitHub release for that tag. Not yet exercised:
+# it has never run on a real tag.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: stable
+      - run: go vet ./... && go test -race ./...
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "dist/epilog-gpu-validator-linux-$arch" ./cmd/epilog-gpu-validator
+          done
+          cp deploy/epilog.sh dist/epilog.sh
+          (cd dist && sha256sum * > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
